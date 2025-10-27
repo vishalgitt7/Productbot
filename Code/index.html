@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Price Compare Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            box-sizing: border-box;
+        }
+        .chat-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .message-animation {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .typing-indicator {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 16px;
+        }
+        .platform-column {
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+            background: white;
+            min-height: 600px;
+        }
+        .platform-header {
+            text-align: center;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-weight: bold;
+            color: white;
+        }
+        .amazon-header { background: linear-gradient(135deg, #ff9900, #ff6600); }
+        .flipkart-header { background: linear-gradient(135deg, #2874f0, #1e5bb8); }
+        .zepto-header { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+        .blinkit-header { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+        .swiggy-header { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .product-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            background: #fafafa;
+            transition: all 0.2s;
+        }
+        .product-item:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        .price-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .platform-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+            background: white;
+        }
+        .not-available {
+            color: #ef4444;
+            font-style: italic;
+        }
+        .available {
+            color: #059669;
+        }
+        .rating-stars {
+            color: #fbbf24;
+        }
+    </style>
+</head>
+<body class="h-full bg-gray-50">
+    <div class="chat-container max-w-6xl mx-auto bg-white shadow-lg">
+        <!-- Header -->
+        <div class="bg-blue-600 text-white p-4 rounded-t-lg">
+            <h1 class="text-xl font-semibold">🛒 Price Compare Bot</h1>
+            <p class="text-blue-100 text-sm">Compare prices across Amazon, Flipkart, Zepto, Blinkit & Swiggy Instamart</p>
+        </div>
+
+        <!-- Chat Messages -->
+        <div id="chatMessages" class="flex-1 p-4 overflow-y-auto bg-white" style="height: 500px;">
+        </div>
+
+        <!-- Input Area -->
+        <div class="border-t bg-gray-50 p-4">
+            <form id="chatForm" class="flex space-x-3">
+                <input 
+                    type="text" 
+                    id="messageInput" 
+                    placeholder="Type product category after selecting platforms..."
+                    class="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-black focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    autocomplete="off"
+                >
+                <button 
+                    type="submit" 
+                    id="sendButton"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    Search
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const chatMessages = document.getElementById('chatMessages');
+        const messageInput = document.getElementById('messageInput');
+        const chatForm = document.getElementById('chatForm');
+        const sendButton = document.getElementById('sendButton');
+
+        // Available platforms
+        const platforms = [
+            { name: 'Amazon', id: 'amazon', color: 'bg-orange-100 text-orange-800 hover:bg-orange-200' },
+            { name: 'Flipkart', id: 'flipkart', color: 'bg-blue-100 text-blue-800 hover:bg-blue-200' },
+            { name: 'Zepto', id: 'zepto', color: 'bg-purple-100 text-purple-800 hover:bg-purple-200' },
+            { name: 'Blinkit', id: 'blinkit', color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' },
+            { name: 'Swiggy Instamart', id: 'swiggy', color: 'bg-red-100 text-red-800 hover:bg-red-200' }
+        ];
+
+        // Brand database for different product categories
+        const brandDatabase = {
+            'tv': ['Samsung', 'LG', 'Sony', 'Mi', 'OnePlus', 'TCL', 'Hisense', 'VU', 'Panasonic', 'Other Brand'],
+            'headphones': ['Sony', 'Bose', 'JBL', 'Sennheiser', 'Audio-Technica', 'Beats', 'Skullcandy', 'Boat', 'Noise', 'Other Brand'],
+            'smartphone': ['Samsung', 'Apple', 'OnePlus', 'Xiaomi', 'Oppo', 'Vivo', 'Realme', 'Google', 'Nothing', 'Other Brand'],
+            'laptop': ['Dell', 'HP', 'Lenovo', 'Asus', 'Acer', 'Apple', 'MSI', 'Alienware', 'Surface', 'Other Brand'],
+            'speaker': ['JBL', 'Sony', 'Bose', 'Marshall', 'Ultimate Ears', 'Anker', 'Boat', 'Harman Kardon', 'Bang & Olufsen', 'Other Brand'],
+            'watch': ['Apple', 'Samsung', 'Fitbit', 'Garmin', 'Amazfit', 'Noise', 'Fire-Boltt', 'Boat', 'Fossil', 'Other Brand'],
+            'tablet': ['Apple', 'Samsung', 'Lenovo', 'Xiaomi', 'Realme', 'OnePlus', 'Amazon', 'Huawei', 'Nokia', 'Other Brand']
+        };
+
+        // Price ranges
+        const priceRanges = [
+            'Under ₹5,000',
+            '₹5,000 - ₹15,000', 
+            '₹15,000 - ₹30,000',
+            '₹30,000 - ₹50,000',
+            '₹50,000 - ₹1,00,000',
+            'Above ₹1,00,000'
+        ];
+
+        // Conversation state
+        let conversationState = {
+            step: 'platform_selection', // platform_selection, product_search, brand_selection, price_selection, showing_results
+            selectedPlatforms: [],
+            searchQuery: '',
+            category: '',
+            selectedBrand: '',
+            priceRange: '',
+            customBrand: ''
+        };
+
+        // Comprehensive product database with top 10 products for each category/brand/price range
+        const productDatabase = {
+            'tv_samsung_₹30,000 - ₹50,000': {
+                amazon: [
+                    { name: 'Samsung 43" Crystal 4K UHD Smart TV UA43AUE60AKLXL', price: '₹32,999', originalPrice: '₹45,900', discount: '28% off', rating: 4.2, reviews: '8,547' },
+                    { name: 'Samsung 50" Crystal 4K UHD Smart TV UA50AUE60AKLXL', price: '₹39,999', originalPrice: '₹54,900', discount: '27% off', rating: 4.3, reviews: '6,234' },
+                    { name: 'Samsung 43" Frame QLED 4K Smart TV QA43LS03BAKLXL', price: '₹47,999', originalPrice: '₹64,900', discount: '26% off', rating: 4.4, reviews: '3,456' },
+                    { name: 'Samsung 55" Crystal 4K UHD Smart TV UA55AUE60AKLXL', price: '₹49,999', originalPrice: '₹69,900', discount: '28% off', rating: 4.1, reviews: '4,567' },
+                    { name: 'Samsung 43" QLED 4K Smart TV QA43Q60CAKLXL', price: '₹44,999', originalPrice: '₹59,900', discount: '25% off', rating: 4.3, reviews: '2,890' },
+                    { name: 'Samsung 50" Frame QLED 4K Smart TV QA50LS03BAKLXL', price: '₹49,999', originalPrice: '₹74,900', discount: '33% off', rating: 4.5, reviews: '1,234' },
+                    { name: 'Samsung 43" Neo QLED 4K Smart TV QA43QN90CAKLXL', price: '₹48,999', originalPrice: '₹69,900', discount: '30% off', rating: 4.4, reviews: '987' },
+                    { name: 'Samsung 55" QLED 4K Smart TV QA55Q60CAKLXL', price: '₹49,999', originalPrice: '₹79,900', discount: '37% off', rating: 4.2, reviews: '3,567' },
+                    { name: 'Samsung 43" Crystal UHD 4K Smart TV UA43BU8000KLXL', price: '₹34,999', originalPrice: '₹47,900', discount: '27% off', rating: 4.1, reviews: '5,678' },
+                    { name: 'Samsung 50" Crystal UHD 4K Smart TV UA50BU8000KLXL', price: '₹42,999', originalPrice: '₹57,900', discount: '26% off', rating: 4.3, reviews: '4,123' }
+                ],
+                flipkart: [
+                    { name: 'Samsung 43 inch Crystal 4K Ultra HD Smart LED TV UA43AUE60AKLXL', price: '₹31,999', originalPrice: '₹45,900', discount: '30% off', rating: 4.1, reviews: '9,234' },
+                    { name: 'Samsung 50 inch Crystal 4K Ultra HD Smart LED TV UA50AUE60AKLXL', price: '₹38,999', originalPrice: '₹54,900', discount: '29% off', rating: 4.2, reviews: '7,456' },
+                    { name: 'Samsung 43 inch QLED 4K Ultra HD Smart TV QA43Q60CAKLXL', price: '₹43,999', originalPrice: '₹59,900', discount: '27% off', rating: 4.4, reviews: '3,789' },
+                    { name: 'Samsung 55 inch Crystal 4K Ultra HD Smart LED TV UA55AUE60AKLXL', price: '₹48,999', originalPrice: '₹69,900', discount: '30% off', rating: 4.0, reviews: '5,123' },
+                    { name: 'Samsung 43 inch Frame QLED 4K Smart TV QA43LS03BAKLXL', price: '₹46,999', originalPrice: '₹64,900', discount: '28% off', rating: 4.3, reviews: '2,567' },
+                    { name: 'Samsung 50 inch QLED 4K Ultra HD Smart TV QA50Q60CAKLXL', price: '₹49,999', originalPrice: '₹74,900', discount: '33% off', rating: 4.2, reviews: '1,890' },
+                    { name: 'Samsung 43 inch Neo QLED 4K Smart TV QA43QN90CAKLXL', price: '₹47,999', originalPrice: '₹69,900', discount: '31% off', rating: 4.5, reviews: '1,234' },
+                    { name: 'Samsung 55 inch QLED 4K Ultra HD Smart TV QA55Q60CAKLXL', price: '₹49,999', originalPrice: '₹79,900', discount: '37% off', rating: 4.1, reviews: '4,567' },
+                    { name: 'Samsung 43 inch Crystal UHD 4K Smart TV UA43BU8000KLXL', price: '₹33,999', originalPrice: '₹47,900', discount: '29% off', rating: 4.2, reviews: '6,789' },
+                    { name: 'Samsung 50 inch Crystal UHD 4K Smart TV UA50BU8000KLXL', price: '₹41,999', originalPrice: '₹57,900', discount: '27% off', rating: 4.0, reviews: '3,456' }
+                ]
+            },
+            'headphones_noise_under ₹5,000': {
+                amazon: [
+                    { name: 'Noise Buds VS102 True Wireless Earbuds', price: '₹1,299', originalPrice: '₹2,999', discount: '57% off', rating: 4.1, reviews: '15,234' },
+                    { name: 'Noise Air Buds Pro True Wireless Earbuds', price: '₹2,499', originalPrice: '₹4,999', discount: '50% off', rating: 4.2, reviews: '12,567' },
+                    { name: 'Noise ColorFit Pro 4 Alpha Smartwatch with Earbuds', price: '₹3,999', originalPrice: '₹7,999', discount: '50% off', rating: 4.0, reviews: '8,234' },
+                    { name: 'Noise Buds Combat True Wireless Earbuds', price: '₹1,799', originalPrice: '₹3,999', discount: '55% off', rating: 4.3, reviews: '9,876' },
+                    { name: 'Noise Air Buds Mini True Wireless Earbuds', price: '₹1,999', originalPrice: '₹3,999', discount: '50% off', rating: 4.1, reviews: '11,345' },
+                    { name: 'Noise Buds VS201 True Wireless Earbuds', price: '₹1,499', originalPrice: '₹2,999', discount: '50% off', rating: 4.2, reviews: '7,890' },
+                    { name: 'Noise Air Buds True Wireless Earbuds', price: '₹2,299', originalPrice: '₹4,499', discount: '49% off', rating: 4.0, reviews: '6,543' },
+                    { name: 'Noise Buds Pop True Wireless Earbuds', price: '₹1,699', originalPrice: '₹3,499', discount: '51% off', rating: 4.1, reviews: '5,678' },
+                    { name: 'Noise Air Buds Pro 2 True Wireless Earbuds', price: '₹2,799', originalPrice: '₹5,499', discount: '49% off', rating: 4.3, reviews: '4,321' },
+                    { name: 'Noise Buds Verve True Wireless Earbuds', price: '₹1,899', originalPrice: '₹3,799', discount: '50% off', rating: 4.0, reviews: '3,456' }
+                ],
+                flipkart: [
+                    { name: 'Noise Buds VS102 Truly Wireless Bluetooth Earbuds', price: '₹1,199', originalPrice: '₹2,999', discount: '60% off', rating: 4.2, reviews: '18,567' },
+                    { name: 'Noise Air Buds Pro Truly Wireless Bluetooth Earbuds', price: '₹2,399', originalPrice: '₹4,999', discount: '52% off', rating: 4.3, reviews: '14,234' },
+                    { name: 'Noise Buds Combat Truly Wireless Bluetooth Earbuds', price: '₹1,699', originalPrice: '₹3,999', discount: '58% off', rating: 4.4, reviews: '11,890' },
+                    { name: 'Noise Air Buds Mini Truly Wireless Bluetooth Earbuds', price: '₹1,899', originalPrice: '₹3,999', discount: '53% off', rating: 4.1, reviews: '13,456' },
+                    { name: 'Noise Buds VS201 Truly Wireless Bluetooth Earbuds', price: '₹1,399', originalPrice: '₹2,999', discount: '53% off', rating: 4.3, reviews: '9,123' },
+                    { name: 'Noise Air Buds Truly Wireless Bluetooth Earbuds', price: '₹2,199', originalPrice: '₹4,499', discount: '51% off', rating: 4.0, reviews: '7,890' },
+                    { name: 'Noise Buds Pop Truly Wireless Bluetooth Earbuds', price: '₹1,599', originalPrice: '₹3,499', discount: '54% off', rating: 4.2, reviews: '6,789' },
+                    { name: 'Noise Air Buds Pro 2 Truly Wireless Bluetooth Earbuds', price: '₹2,699', originalPrice: '₹5,499', discount: '51% off', rating: 4.4, reviews: '5,234' },
+                    { name: 'Noise Buds Verve Truly Wireless Bluetooth Earbuds', price: '₹1,799', originalPrice: '₹3,799', discount: '53% off', rating: 4.1, reviews: '4,567' },
+                    { name: 'Noise Buds Solo Truly Wireless Bluetooth Earbuds', price: '₹1,999', originalPrice: '₹3,999', discount: '50% off', rating: 4.0, reviews: '3,890' }
+                ]
+            },
+            'headphones_sony_₹5,000 - ₹15,000': {
+                amazon: [
+                    { name: 'Sony WH-CH720N Wireless Noise Canceling Headphones', price: '₹8,999', originalPrice: '₹12,990', discount: '31% off', rating: 4.3, reviews: '12,547' },
+                    { name: 'Sony WH-CH520 Wireless On-Ear Headphones', price: '₹5,999', originalPrice: '₹7,990', discount: '25% off', rating: 4.1, reviews: '8,234' },
+                    { name: 'Sony WF-C500 Truly Wireless Earbuds', price: '₹6,499', originalPrice: '₹8,990', discount: '28% off', rating: 4.2, reviews: '15,456' },
+                    { name: 'Sony WH-XB910N Wireless Noise Canceling Headphones', price: '₹12,999', originalPrice: '₹19,990', discount: '35% off', rating: 4.4, reviews: '6,789' },
+                    { name: 'Sony WF-XB700 Truly Wireless Earbuds', price: '₹7,999', originalPrice: '₹10,990', discount: '27% off', rating: 4.0, reviews: '9,123' },
+                    { name: 'Sony MDR-XB450AP Wired Extra Bass Headphones', price: '₹2,999', originalPrice: '₹4,490', discount: '33% off', rating: 4.2, reviews: '18,567' },
+                    { name: 'Sony WI-C100 Wireless In-ear Headphones', price: '₹3,499', originalPrice: '₹4,990', discount: '30% off', rating: 4.1, reviews: '11,234' },
+                    { name: 'Sony WF-C700N Truly Wireless Noise Canceling Earbuds', price: '₹9,999', originalPrice: '₹13,990', discount: '29% off', rating: 4.3, reviews: '4,567' },
+                    { name: 'Sony WH-CH710N Wireless Noise Canceling Headphones', price: '₹11,999', originalPrice: '₹16,990', discount: '29% off', rating: 4.2, reviews: '7,890' },
+                    { name: 'Sony MDR-ZX110AP Wired On-Ear Headphones', price: '₹1,999', originalPrice: '₹2,990', discount: '33% off', rating: 4.0, reviews: '25,123' }
+                ],
+                flipkart: [
+                    { name: 'Sony WH-CH720N Active Noise Cancellation Bluetooth Headset', price: '₹8,799', originalPrice: '₹12,990', discount: '32% off', rating: 4.2, reviews: '13,234' },
+                    { name: 'Sony WH-CH520 Wireless On Ear Headphones', price: '₹5,799', originalPrice: '₹7,990', discount: '27% off', rating: 4.0, reviews: '9,567' },
+                    { name: 'Sony WF-C500 True Wireless Bluetooth Earbuds', price: '₹6,299', originalPrice: '₹8,990', discount: '30% off', rating: 4.1, reviews: '16,789' },
+                    { name: 'Sony WH-XB910N Extra Bass Wireless Noise Cancelling Headphones', price: '₹12,799', originalPrice: '₹19,990', discount: '36% off', rating: 4.3, reviews: '7,123' },
+                    { name: 'Sony WF-XB700 Extra Bass True Wireless Earbuds', price: '₹7,799', originalPrice: '₹10,990', discount: '29% off', rating: 3.9, reviews: '10,456' },
+                    { name: 'Sony MDR-XB450AP Extra Bass Wired Headphones', price: '₹2,899', originalPrice: '₹4,490', discount: '35% off', rating: 4.1, reviews: '19,890' },
+                    { name: 'Sony WI-C100 Wireless in-Ear Headphones', price: '₹3,399', originalPrice: '₹4,990', discount: '32% off', rating: 4.0, reviews: '12,567' },
+                    { name: 'Sony WF-C700N Noise Canceling True Wireless Earbuds', price: '₹9,799', originalPrice: '₹13,990', discount: '30% off', rating: 4.2, reviews: '5,234' },
+                    { name: 'Sony WH-CH710N Wireless Noise Cancelling Headphones', price: '₹11,799', originalPrice: '₹16,990', discount: '31% off', rating: 4.1, reviews: '8,456' },
+                    { name: 'Sony MDR-ZX110AP Wired Headphones with Mic', price: '₹1,899', originalPrice: '₹2,990', discount: '36% off', rating: 3.9, reviews: '26,789' }
+                ]
+            },
+            'iphone 15': {
+                amazon: [
+                    { name: 'Apple iPhone 15 (128 GB) - Pink', price: '₹69,900', originalPrice: '₹79,900', discount: '13% off', rating: 4.5, reviews: '4,523' },
+                    { name: 'Apple iPhone 15 (256 GB) - Blue', price: '₹79,900', originalPrice: '₹89,900', discount: '11% off', rating: 4.6, reviews: '3,876' },
+                    { name: 'Apple iPhone 15 (128 GB) - Black', price: '₹71,999', originalPrice: '₹79,900', discount: '10% off', rating: 4.4, reviews: '2,987' }
+                ],
+                flipkart: [
+                    { name: 'Apple iPhone 15 (Pink, 128 GB)', price: '₹71,999', originalPrice: '₹79,900', discount: '10% off', rating: 4.4, reviews: '5,234' },
+                    { name: 'Apple iPhone 15 (Blue, 256 GB)', price: '₹81,999', originalPrice: '₹89,900', discount: '9% off', rating: 4.5, reviews: '4,123' },
+                    { name: 'Apple iPhone 15 (Green, 128 GB)', price: '₹72,499', originalPrice: '₹79,900', discount: '9% off', rating: 4.3, reviews: '3,456' }
+                ],
+                zepto: [],
+                blinkit: [],
+                swiggy: []
+            },
+            'amul milk': {
+                amazon: [
+                    { name: 'Amul Gold Full Cream Fresh Milk, 1L', price: '₹58', originalPrice: '₹65', discount: '11% off', rating: 4.1, reviews: '1,234' },
+                    { name: 'Amul Taaza Toned Fresh Milk, 1L', price: '₹52', originalPrice: '₹58', discount: '10% off', rating: 4.2, reviews: '987' },
+                    { name: 'Amul Gold Full Cream Fresh Milk, 500ml', price: '₹32', originalPrice: '₹35', discount: '9% off', rating: 4.0, reviews: '756' }
+                ],
+                flipkart: [],
+                zepto: [
+                    { name: 'Amul Gold Full Cream Milk 1L', price: '₹52', originalPrice: '₹58', discount: '10% off', rating: 4.3, reviews: '2,456' },
+                    { name: 'Amul Taaza Toned Milk 1L', price: '₹48', originalPrice: '₹54', discount: '11% off', rating: 4.2, reviews: '1,876' },
+                    { name: 'Amul Gold Full Cream Milk 500ml', price: '₹28', originalPrice: '₹32', discount: '13% off', rating: 4.4, reviews: '1,234' }
+                ],
+                blinkit: [
+                    { name: 'Amul Gold Full Cream Milk 1 L', price: '₹54', originalPrice: '₹60', discount: '10% off', rating: 4.2, reviews: '3,123' },
+                    { name: 'Amul Taaza Toned Milk 1 L', price: '₹50', originalPrice: '₹56', discount: '11% off', rating: 4.1, reviews: '2,345' },
+                    { name: 'Amul Gold Full Cream Milk 500 ml', price: '₹30', originalPrice: '₹33', discount: '9% off', rating: 4.3, reviews: '1,567' }
+                ],
+                swiggy: [
+                    { name: 'Amul Gold Full Cream Milk (1 L)', price: '₹56', originalPrice: '₹62', discount: '10% off', rating: 4.0, reviews: '2,789' },
+                    { name: 'Amul Taaza Toned Milk (1 L)', price: '₹52', originalPrice: '₹58', discount: '10% off', rating: 4.1, reviews: '2,123' },
+                    { name: 'Amul Gold Full Cream Milk (500 ml)', price: '₹31', originalPrice: '₹34', discount: '9% off', rating: 3.9, reviews: '1,456' }
+                ]
+            },
+            'jbl speaker': {
+                amazon: [
+                    { name: 'JBL Go 3 Portable Bluetooth Speaker - Blue', price: '₹2,199', originalPrice: '₹3,499', discount: '37% off', rating: 4.4, reviews: '8,567' },
+                    { name: 'JBL Clip 4 Portable Bluetooth Speaker - Black', price: '₹3,499', originalPrice: '₹4,999', discount: '30% off', rating: 4.3, reviews: '5,234' },
+                    { name: 'JBL Charge 5 Portable Bluetooth Speaker - Red', price: '₹12,999', originalPrice: '₹19,999', discount: '35% off', rating: 4.5, reviews: '3,456' }
+                ],
+                flipkart: [
+                    { name: 'JBL Go 3 Portable Bluetooth Speaker Blue', price: '₹2,299', originalPrice: '₹3,499', discount: '34% off', rating: 4.3, reviews: '9,123' },
+                    { name: 'JBL Clip 4 Portable Bluetooth Speaker Black', price: '₹3,599', originalPrice: '₹4,999', discount: '28% off', rating: 4.2, reviews: '6,789' },
+                    { name: 'JBL Charge 5 Portable Bluetooth Speaker Red', price: '₹13,499', originalPrice: '₹19,999', discount: '33% off', rating: 4.4, reviews: '4,567' }
+                ],
+                zepto: [],
+                blinkit: [],
+                swiggy: []
+            },
+            'bread': {
+                amazon: [
+                    { name: 'Britannia Bread 400g White Bread', price: '₹28', originalPrice: '₹32', discount: '13% off', rating: 4.1, reviews: '567' },
+                    { name: 'Modern Bread White Bread 400g', price: '₹26', originalPrice: '₹30', discount: '13% off', rating: 4.0, reviews: '423' },
+                    { name: 'Harvest Gold White Bread 400g', price: '₹30', originalPrice: '₹35', discount: '14% off', rating: 4.2, reviews: '345' }
+                ],
+                flipkart: [],
+                zepto: [
+                    { name: 'Britannia White Bread 400g', price: '₹25', originalPrice: '₹30', discount: '17% off', rating: 4.3, reviews: '1,234' },
+                    { name: 'Modern White Bread 400g', price: '₹24', originalPrice: '₹28', discount: '14% off', rating: 4.1, reviews: '987' },
+                    { name: 'Perfect White Bread 400g', price: '₹26', originalPrice: '₹31', discount: '16% off', rating: 4.2, reviews: '756' }
+                ],
+                blinkit: [
+                    { name: 'Britannia White Bread (400 g)', price: '₹26', originalPrice: '₹31', discount: '16% off', rating: 4.2, reviews: '1,567' },
+                    { name: 'Modern White Bread (400 g)', price: '₹25', originalPrice: '₹29', discount: '14% off', rating: 4.0, reviews: '1,234' },
+                    { name: 'Harvest Gold White Bread (400 g)', price: '₹28', originalPrice: '₹33', discount: '15% off', rating: 4.3, reviews: '890' }
+                ],
+                swiggy: [
+                    { name: 'Britannia White Bread 400g', price: '₹27', originalPrice: '₹32', discount: '16% off', rating: 4.0, reviews: '2,123' },
+                    { name: 'Modern White Bread 400g', price: '₹26', originalPrice: '₹30', discount: '13% off', rating: 3.9, reviews: '1,678' },
+                    { name: 'Perfect White Bread 400g', price: '₹28', originalPrice: '₹33', discount: '15% off', rating: 4.1, reviews: '1,345' }
+                ]
+            }
+        };
+
+        // Add message to chat
+        function addMessage(content, isUser = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message-animation mb-4';
+            
+            if (isUser) {
+                messageDiv.innerHTML = `
+                    <div class="flex items-start space-x-3 justify-end">
+                        <div class="bg-blue-600 text-white rounded-lg p-3 max-w-md">
+                            <p class="text-sm">${content}</p>
+                        </div>
+                        <div class="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center text-white text-sm font-bold">👤</div>
+                    </div>
+                `;
+            } else {
+                messageDiv.innerHTML = `
+                    <div class="flex items-start space-x-3">
+                        <div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold">🤖</div>
+                        <div class="bg-blue-50 rounded-lg p-3 max-w-4xl">
+                            ${content}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Show typing indicator
+        function showTyping() {
+            const typingDiv = document.createElement('div');
+            typingDiv.id = 'typing';
+            typingDiv.className = 'mb-4';
+            typingDiv.innerHTML = `
+                <div class="flex items-start space-x-3">
+                    <div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold">🤖</div>
+                    <div class="bg-blue-50 rounded-lg p-3">
+                        <p class="text-black text-sm typing-indicator">Searching platforms...</p>
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(typingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Remove typing indicator
+        function hideTyping() {
+            const typing = document.getElementById('typing');
+            if (typing) {
+                typing.remove();
+            }
+        }
+
+        // Generate stars for rating
+        function generateStars(rating) {
+            if (rating === 'N/A') return 'N/A';
+            const fullStars = Math.floor(rating);
+            const hasHalfStar = rating % 1 !== 0;
+            let stars = '';
+            
+            for (let i = 0; i < fullStars; i++) {
+                stars += '★';
+            }
+            if (hasHalfStar) {
+                stars += '☆';
+            }
+            
+            return `${stars} (${rating})`;
+        }
+
+        // Generate proper product links for each platform
+        function getProductLink(platformId, productName, brand, category) {
+            const searchTerm = encodeURIComponent(productName);
+            const brandCategory = encodeURIComponent(`${brand} ${category}`);
+            
+            switch(platformId) {
+                case 'amazon':
+                    return `https://www.amazon.in/s?k=${searchTerm}`;
+                case 'flipkart':
+                    return `https://www.flipkart.com/search?q=${searchTerm}`;
+                case 'zepto':
+                    return `https://www.zepto.com/search?query=${searchTerm}`;
+                case 'blinkit':
+                    return `https://blinkit.com/s/?q=${searchTerm}`;
+                case 'swiggy':
+                    return `https://www.swiggy.com/instamart/search?query=${searchTerm}`;
+                default:
+                    return `https://www.google.com/search?q=${searchTerm}`;
+            }
+        }
+
+        // Create platform selection interface
+        function createPlatformSelection() {
+            let platformHTML = `
+                <div class="text-black text-sm mb-3">
+                    <p class="mb-3">Which platforms would you like me to search? Select one or more:</p>
+                    <div class="grid grid-cols-2 gap-2 max-w-md">
+            `;
+            
+            platforms.forEach((platform) => {
+                platformHTML += `
+                    <button onclick="togglePlatform('${platform.id}')" id="platform-${platform.id}" class="${platform.color} px-3 py-2 rounded text-sm font-medium transition-colors border-2 border-transparent">
+                        ${platform.name}
+                    </button>
+                `;
+            });
+            
+            platformHTML += `
+                    </div>
+                    <div class="mt-3">
+                        <button onclick="confirmPlatforms()" id="confirmPlatformsBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            Continue with Selected Platforms
+                        </button>
+                    </div>
+                    <p class="mt-2 text-xs text-gray-500">Select at least one platform to continue</p>
+                </div>
+            `;
+            
+            return platformHTML;
+        }
+
+        // Create brand selection interface
+        function createBrandSelection(category) {
+            const brands = brandDatabase[category];
+            let brandHTML = `
+                <div class="text-black text-sm mb-3">
+                    <p class="mb-3">Great! I found <strong>${category}</strong> options. Please select a brand:</p>
+                    <div class="grid grid-cols-3 gap-2 max-w-lg">
+            `;
+            
+            brands.forEach((brand) => {
+                if (brand === 'Other Brand') {
+                    brandHTML += `
+                        <button onclick="selectOtherBrand()" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded text-sm font-medium transition-colors border-2 border-dashed border-gray-400">
+                            ${brand}
+                        </button>
+                    `;
+                } else {
+                    brandHTML += `
+                        <button onclick="selectBrand('${brand}')" class="bg-blue-100 hover:bg-blue-200 text-blue-800 px-3 py-2 rounded text-sm font-medium transition-colors">
+                            ${brand}
+                        </button>
+                    `;
+                }
+            });
+            
+            brandHTML += `
+                    </div>
+                    <div id="customBrandInput" class="mt-3 hidden">
+                        <input type="text" id="customBrandField" placeholder="Enter brand name..." class="border border-gray-300 rounded px-3 py-2 text-sm w-48 mr-2">
+                        <button onclick="confirmCustomBrand()" class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm font-medium">
+                            Confirm
+                        </button>
+                    </div>
+                    <p class="mt-3 text-xs text-gray-500">Click on any brand or choose "Other Brand" to enter custom brand</p>
+                </div>
+            `;
+            
+            return brandHTML;
+        }
+
+        // Create price range selection interface
+        function createPriceSelection(brand, category) {
+            let priceHTML = `
+                <div class="text-black text-sm mb-3">
+                    <p class="mb-3">Perfect! You selected <strong>${brand}</strong> ${category}. What's your budget?</p>
+                    <div class="grid grid-cols-2 gap-2 max-w-md">
+            `;
+            
+            priceRanges.forEach((range) => {
+                priceHTML += `
+                    <button onclick="selectPriceRange('${range}')" class="bg-green-100 hover:bg-green-200 text-green-800 px-3 py-2 rounded text-sm font-medium transition-colors">
+                        ${range}
+                    </button>
+                `;
+            });
+            
+            priceHTML += `
+                    </div>
+                    <p class="mt-3 text-xs text-gray-500">Click on your preferred price range</p>
+                </div>
+            `;
+            
+            return priceHTML;
+        }
+
+        // Create side-by-side comparison results
+        function createComparisonResults(category, brand, priceRange, selectedPlatforms) {
+            const productKey = `${category}_${brand.toLowerCase()}_${priceRange.toLowerCase()}`;
+            
+            let resultsHTML = `
+                <div class="text-black text-sm mb-3">
+                    <strong>Top 10 ${brand} ${category} in ${priceRange} range</strong>
+                </div>
+            `;
+
+            if (selectedPlatforms.length === 2) {
+                // Side by side comparison for 2 platforms
+                resultsHTML += `<div class="comparison-grid">`;
+                
+                selectedPlatforms.forEach(platformId => {
+                    const platform = platforms.find(p => p.id === platformId);
+                    const platformKey = platformId === 'swiggy' ? 'swiggy' : platformId;
+                    
+                    resultsHTML += `
+                        <div class="platform-column">
+                            <div class="platform-header ${platformId}-header">
+                                ${platform.name}
+                            </div>
+                    `;
+
+                    // Get products for this platform
+                    const products = productDatabase[productKey] && productDatabase[productKey][platformKey] 
+                        ? productDatabase[productKey][platformKey] 
+                        : [];
+
+                    if (products.length > 0) {
+                        products.forEach((product, index) => {
+                            resultsHTML += `
+                                <div class="product-item">
+                                    <div class="text-xs text-gray-500 mb-1">#${index + 1}</div>
+                                    <h4 class="font-medium text-gray-800 mb-2 text-sm leading-tight">${product.name}</h4>
+                                    <div class="flex justify-between items-start mb-2">
+                                        <div>
+                                            <div class="text-lg font-bold text-green-600">${product.price}</div>
+                                            ${product.originalPrice ? `<div class="text-xs text-gray-500"><span class="line-through">${product.originalPrice}</span> <span class="text-green-600 font-medium">${product.discount}</span></div>` : ''}
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <div class="text-xs text-gray-600">
+                                            <span class="rating-stars">${generateStars(product.rating)}</span>
+                                            <span class="ml-1">(${product.reviews})</span>
+                                        </div>
+                                        <a href="${getProductLink(platformId, product.name, brand, category)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline text-xs font-medium">
+                                            View Product
+                                        </a>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        resultsHTML += `
+                            <div class="text-center text-gray-500 py-8">
+                                <p class="mb-2">No products found</p>
+                                <a href="${getProductLink(platformId, brand + ' ' + category, brand, category)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline text-sm">
+                                    Search manually
+                                </a>
+                            </div>
+                        `;
+                    }
+
+                    resultsHTML += `</div>`;
+                });
+                
+                resultsHTML += `</div>`;
+            } else {
+                // Grid layout for more than 2 platforms
+                resultsHTML += `<div class="price-grid">`;
+                
+                selectedPlatforms.forEach(platformId => {
+                    const platform = platforms.find(p => p.id === platformId);
+                    const platformKey = platformId === 'swiggy' ? 'swiggy' : platformId;
+                    
+                    resultsHTML += `
+                        <div class="platform-card">
+                            <div class="platform-header ${platformId}-header mb-4">
+                                ${platform.name}
+                            </div>
+                    `;
+
+                    const products = productDatabase[productKey] && productDatabase[productKey][platformKey] 
+                        ? productDatabase[productKey][platformKey].slice(0, 5) // Show top 5 for grid layout
+                        : [];
+
+                    if (products.length > 0) {
+                        products.forEach((product, index) => {
+                            resultsHTML += `
+                                <div class="product-item mb-3">
+                                    <div class="text-xs text-gray-500 mb-1">#${index + 1}</div>
+                                    <h4 class="font-medium text-gray-800 mb-2 text-sm">${product.name}</h4>
+                                    <div class="text-lg font-bold text-green-600">${product.price}</div>
+                                    ${product.originalPrice ? `<div class="text-xs text-gray-500"><span class="line-through">${product.originalPrice}</span> <span class="text-green-600">${product.discount}</span></div>` : ''}
+                                    <div class="flex justify-between items-center mt-1">
+                                        <div class="text-xs text-gray-600">
+                                            <span class="rating-stars">${generateStars(product.rating)}</span>
+                                            <span class="ml-1">(${product.reviews})</span>
+                                        </div>
+                                        <a href="${getProductLink(platformId, product.name, brand, category)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline text-xs">
+                                            View
+                                        </a>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        resultsHTML += `
+                            <div class="text-center text-gray-500 py-4">
+                                <p>No products found</p>
+                            </div>
+                        `;
+                    }
+
+                    resultsHTML += `</div>`;
+                });
+                
+                resultsHTML += `</div>`;
+            }
+
+            return resultsHTML;
+        }
+
+        // Global functions for platform selection
+        window.togglePlatform = function(platformId) {
+            const button = document.getElementById(`platform-${platformId}`);
+            const confirmBtn = document.getElementById('confirmPlatformsBtn');
+            
+            if (conversationState.selectedPlatforms.includes(platformId)) {
+                // Remove platform
+                conversationState.selectedPlatforms = conversationState.selectedPlatforms.filter(id => id !== platformId);
+                button.classList.remove('border-blue-500', 'bg-blue-200');
+                button.classList.add('border-transparent');
+            } else {
+                // Add platform
+                conversationState.selectedPlatforms.push(platformId);
+                button.classList.add('border-blue-500', 'bg-blue-200');
+                button.classList.remove('border-transparent');
+            }
+            
+            // Enable/disable confirm button
+            if (conversationState.selectedPlatforms.length > 0) {
+                confirmBtn.disabled = false;
+            } else {
+                confirmBtn.disabled = true;
+            }
+        };
+
+        window.confirmPlatforms = function() {
+            if (conversationState.selectedPlatforms.length === 0) return;
+            
+            conversationState.step = 'product_search';
+            
+            const selectedNames = conversationState.selectedPlatforms.map(id => 
+                platforms.find(p => p.id === id).name
+            ).join(', ');
+            
+            addMessage(`Selected platforms: ${selectedNames}`, true);
+            
+            setTimeout(() => {
+                addMessage(`
+                    <div class="text-black text-sm">
+                        <p class="mb-2">Great! I'll search on <strong>${selectedNames}</strong>.</p>
+                        <p class="mb-2">Now, what product category would you like to search for?</p>
+                        <p class="text-xs text-gray-500">Examples: "TV", "Headphones", "Smartphone", "Laptop", "Speaker", "Watch", "Tablet"</p>
+                    </div>
+                `);
+            }, 500);
+        };
+
+        // Global functions for brand selection
+        window.selectBrand = function(brand) {
+            conversationState.selectedBrand = brand;
+            conversationState.step = 'price_selection';
+            
+            addMessage(brand, true);
+            
+            setTimeout(() => {
+                const priceSelection = createPriceSelection(brand, conversationState.category);
+                addMessage(priceSelection);
+            }, 500);
+        };
+
+        window.selectOtherBrand = function() {
+            const customInput = document.getElementById('customBrandInput');
+            customInput.classList.remove('hidden');
+            document.getElementById('customBrandField').focus();
+        };
+
+        window.confirmCustomBrand = function() {
+            const customBrand = document.getElementById('customBrandField').value.trim();
+            if (customBrand) {
+                conversationState.selectedBrand = customBrand;
+                conversationState.customBrand = customBrand;
+                conversationState.step = 'price_selection';
+                
+                addMessage(`Other Brand: ${customBrand}`, true);
+                
+                setTimeout(() => {
+                    const priceSelection = createPriceSelection(customBrand, conversationState.category);
+                    addMessage(priceSelection);
+                }, 500);
+            }
+        };
+
+        // Global function for price range selection
+        window.selectPriceRange = function(range) {
+            conversationState.priceRange = range;
+            conversationState.step = 'showing_results';
+            
+            addMessage(range, true);
+            
+            // Show typing indicator
+            showTyping();
+            
+            setTimeout(() => {
+                hideTyping();
+                const results = createComparisonResults(
+                    conversationState.category, 
+                    conversationState.selectedBrand, 
+                    range, 
+                    conversationState.selectedPlatforms
+                );
+                addMessage(results);
+                
+                // Reset conversation state for new search
+                conversationState = {
+                    step: 'platform_selection',
+                    selectedPlatforms: [],
+                    searchQuery: '',
+                    category: '',
+                    selectedBrand: '',
+                    priceRange: '',
+                    customBrand: ''
+                };
+            }, 2000);
+        };
+
+        // Handle form submission
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            if (conversationState.step === 'platform_selection') {
+                // Don't allow typing until platforms are selected
+                return;
+                
+            } else if (conversationState.step === 'product_search') {
+                // Product category search after platform selection
+                const normalizedMessage = message.toLowerCase().trim();
+                let foundCategory = null;
+                
+                // Check if the message matches any category
+                for (const category in brandDatabase) {
+                    if (normalizedMessage.includes(category) || category.includes(normalizedMessage)) {
+                        foundCategory = category;
+                        break;
+                    }
+                }
+                
+                if (foundCategory) {
+                    conversationState.category = foundCategory;
+                    conversationState.step = 'brand_selection';
+                    
+                    addMessage(message, true);
+                    messageInput.value = '';
+                    
+                    setTimeout(() => {
+                        const brandSelection = createBrandSelection(foundCategory);
+                        addMessage(brandSelection);
+                    }, 500);
+                } else {
+                    addMessage(message, true);
+                    messageInput.value = '';
+                    
+                    setTimeout(() => {
+                        addMessage(`
+                            <div class="text-black text-sm">
+                                <p class="mb-2">Sorry, I couldn't find "<strong>${message}</strong>" in my supported categories.</p>
+                                <p class="mb-2">I can help you compare prices for:</p>
+                                <ul class="list-disc list-inside text-gray-600 mb-2">
+                                    <li><strong>Electronics:</strong> TV, Headphones, Smartphone, Laptop, Speaker, Watch, Tablet</li>
+                                </ul>
+                                <p class="text-xs text-gray-500">Please try searching for one of these categories!</p>
+                            </div>
+                        `);
+                    }, 500);
+                }
+            }
+        });
+
+        // Show platform selection immediately on load
+        window.addEventListener('load', () => {
+            const platformSelection = createPlatformSelection();
+            addMessage(platformSelection);
+            messageInput.focus();
+        });
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'99507f7660edff68',t:'MTc2MTU1MDMyOS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
